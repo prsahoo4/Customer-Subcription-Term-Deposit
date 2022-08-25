@@ -1,0 +1,671 @@
+---
+title: "Dana 4820-001 Final Project Customer Subscription"
+output:
+  word_document: default
+  html_notebook: default
+---
+## Predicting Whether The Customer Will Subscribe To Term Deposit
+
+Nowadays, marketing spending in the banking industry is massive, meaning that it is essential for banks to optimize marketing strategies and improve effectiveness. Understanding customers’ need leads to more effective marketing plans, smarter product designs and greater customer satisfaction.
+
+This project will enable the bank to develop a more granular understanding of its customer base, predict customers' response to its telemarketing campaign and establish a target customer profile for future marketing plans.
+
+By analyzing customer features, such as demographics and transaction history, the bank will be able to predict customer saving behaviours and identify which type of customers is more likely to make term deposits. The bank can then focus its marketing efforts on those customers. This will not only allow the bank to secure deposits more effectively but also increase customer satisfaction by reducing undesirable advertisements for certain customers.
+
+### Attribute Information:¶
+* age (numeric)
+
+* job : type of job (categorical: ‘admin.’,’bluecollar’,’entrepreneur’,’housemaid’,’management’,’retired’,’selfemployed’,’services’,’student’,’technician’,’unemployed’,’unknown’)
+
+* marital : marital status (categorical: ‘divorced’,’married’,’single’,’unknown’; note: ‘divorced’ means divorced or widowed)
+
+* education (categorical:‘basic.4y’,’basic.6y’,’basic.9y’,’high.school’,’illiterate’,’professional.course’,’university.degree’,’unknown’)
+
+* default: has credit in default? (categorical: ‘no’,’yes’,’unknown’)
+
+* balance: average yearly balance, in euros (numeric)
+
+* housing: has housing loan? (categorical: ‘no’,’yes’,’unknown’)
+
+* loan: has personal loan? (categorical: ‘no’,’yes’,’unknown’)
+
+* contact: contact communication type (categorical: ‘cellular’,’telephone’)
+
+* day: last contact day of the month (numeric 1 -31)
+
+* month: last contact month of year (categorical: ‘jan’, ‘feb’, ‘mar’, …, ‘nov’, ‘dec’)
+
+* duration: last contact duration, in seconds (numeric). Important note: this attribute highly affects the output target (e.g., if duration=0 then y=’no’). Yet,the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and should be discarded if the intention is to have a realistic predictive model.
+
+* campaign: number of contacts performed during this campaign and for this client (numeric, includes last contact)
+
+* pdays: number of days that passed by after the client was last contacted from a previous campaign (numeric; -1 means client was not previously contacted)
+
+* previous: number of contacts performed before this campaign and for this client (numeric)
+
+* poutcome: outcome of the previous marketing campaign (categorical:‘failure’,’nonexistent’,’success’)
+
+* target: has the client subscribed a term deposit? (binary: “yes”,”no”)
+
+#### Loading Libraries:
+
+```{r}
+library(tidyverse)
+library(hrbrthemes)
+library(viridis)
+#library(Johnson)
+library(tidyverse)
+library(fastDummies)
+library(MASS)
+library(caret)
+library(leaps)
+library(here)
+library(skimr)
+library(janitor)
+library(lubridate)
+library(LaplacesDemon)
+library(WVPlots)
+library(praznik)
+library(standardize)
+library(clusterSim)
+library(dplyr)
+library(reshape2)
+library(caTools)
+library(ggcorrplot)
+library(Metrics)
+library(car)
+library(olsrr)
+library(PerformanceAnalytics)
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+theme_set(theme_sjplot())
+```
+
+
+#### Read Dataset
+The dataset has been uploaded here. A first glimpse of variables is observed by considering head of the dataset.
+
+```{r}
+df_loan <- read.csv("../dataset/train.csv")
+head(df_loan)
+```
+#### Datatypes
+The types of variables is checked by observing the structure of data set. A list of variables with is type has been shown as:
+
+```{r}
+str(df_loan)
+```
+Out of total 18 variables; ID, age, day, balance, duration, campaign, pdays and previous are integer or numerical types. All other variables are categorical with character data type.
+
+#### Summary
+The summary of dataset is always observed to see statistical parameters of variables. It basically describes mean, standard deviation, first quantile, third quantile, median and IQR which are essential to understand basic outlook of variable. It also tells us about number of missing values. Also, the first consideration of outliers are considered by inspecting these statistics.
+
+```{r}
+summary(df_loan)
+```
+It is observed that no variable has missing values. 
+Also, the outliers can be easily estimated from difference between third quantile and maximum value of variable. Balance, campaign, duration, pdays and payment have huge difference between third quantile value and maximum values. Hence, the variables have outliers.
+We know that all outliers are not bad outliers because these can have some potential information about the variable. In this case, since we are working with bank data, so the balance in different accounts may vary from regular range because some peoples will have more funds than others. Therefore, we will not consider this as bad outlier and we will not deal with it. Also, the duration of bank account may vary because few people have same or one bank account during entire span of their life and other have many different accounts and their duration of process may be less. Thus, this is also a general variable will informative outliers.
+
+outliers in campaign, pdays, previous
+
+#### Removing ID
+Since we know that less variables will give accurate results. Hence, we decided to remove ID because this is similar to index variable and it can correlate to other important numerical variables. The correlation will bias important relationships of variables. Hence, removing ID in the beginning of analysis will reduce all these difficulties. 
+
+```{r}
+df_loan <- subset(df_loan, select = -c(ID))
+head(df_loan)
+```
+#### Duration: seconds to minutes
+We have changed duration of call from seconds to minutes. As this is the main variable which can affect the target variable because the longer the discussion over the phone call, higher will be chances of their interest in bank services. Changing units from seconds to minutes will give us more stable pattern.
+
+```{r}
+df_loan["duration"] <- df_loan["duration"]/60
+```
+
+# Visualization of Variables
+The following boxplots are drawn to see the outliers among all variables. The discussion for all variables is given below:
+1. Age: This variable has a range of people whose age is more than 70 which are represented by dark dots. But these are informative and near outliers. Hence, these are kept in the analysis.
+2. Balance: The balance has a long range of outliers. But these are true numbers because lots of people have more funds in their bank account. These are also informative outliers.
+3. Campaign: This variable is defined as number of contacts made during the campaign for particular person. These outliers have some extreme points which can affect the analysis, and handled below.
+4. Duration: As discussed ablove, lots of people spend more time on call to discuss services. These are thus good outliers and are kept same.
+5. Pdays:We have handled these outliers because it range is extended. These may have some influential points. 
+6. Previous: This varaible has few extreme outliers, so these can be handled to avoid biasing.
+```{r}
+df_loan %>%
+  keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+  facet_wrap(~ key, scales = "free") +
+  geom_boxplot()
+```
+
+
+#### Outliers: campaign
+We have discussed above that outliers in this variable can bias the results because bank will consider all clients equally. Thus, having some customers with more campaign rate or more number of contacted times is somewhat irrelevant. We have thus capped the outliers to its 95 percentile.
+The normality plot shows that variable is not normally distributed.
+```{r}
+qqnorm(df_loan$campaign, main = "campaign")
+```
+
+Lets handle some extreme outliers based on capping and flooring techniques:
+
+```{r}
+df_loan$campaign[df_loan$campaign >= quantile(df_loan$campaign,0.95)] <- quantile(df_loan$campaign,0.95)
+qqnorm(df_loan$campaign, main = "campaign")
+```
+The plot represents that all there are some chunks(or categories) in this variable.
+
+#### Outliers: pdays
+This variable is again not normally distributed as shown below:
+```{r}
+qqnorm(df_loan$pdays, main = "pdays")
+```
+
+Lets find some extreme outliers based on capping and flooring techniques:
+
+```{r}
+df_loan$pdays[df_loan$pdays >= quantile(df_loan$pdays,0.95)] <- quantile(df_loan$pdays,0.95)
+#### fixing negative values to 0
+df_loan$pdays[df_loan$pdays == -1] <- 0
+qqnorm(df_loan$pdays, main = "pdays")
+```
+The outliers are again capped to 95% value and negative 1 is replaced to 0 because days can not have negative values. It is not normally distributed.
+
+#### Outliers: previous
+The normality plot is showing some skewness and the variable is not normally distributed.
+```{r}
+qqnorm(df_loan$previous, main = "previous")
+```
+
+Lets find some extreme outliers based on capping and flooring techniques:
+
+```{r}
+df_loan$previous[df_loan$previous >= quantile(df_loan$previous,0.95)] <- quantile(df_loan$previous,0.95)
+qqnorm(df_loan$previous, main = "previous")
+```
+This variable is again fixed by taking 95% value and the plot represents that this variable has somewhat categorical behaviour.
+
+#### binning 
+We have binned the variables like campaign,pdays,previous to see some specific trends of these variables. This is done as
+
+#### binning : campaign
+We have derived 8bins of equal width.
+```{r}
+library(dlookr)
+df_loan$campaign_bin <- binning(df_loan$campaign, nbins = 8, type = "equal",
+                                labels = c("C1", "C2", "C3", "C4", "C5", "C6","C7","C8"))
+print("campaign_eq_bins ")
+df_loan$campaign_bin
+```
+
+#### binning : pdays
+We have created 4bins with k-means type which usually bin range of continuous variable into groups with least within group sum of squared deviations.
+```{r}
+df_loan$pday_bin <- binning(df_loan$pdays, nbins = 4, type = "kmeans",
+                            labels = c("P1", "P2", "P3", "P4"))
+print("pdays_bins ")
+df_loan$pday_bin
+```
+
+#### binning : previous
+We have divided in two bins with equal width technique.
+```{r}
+df_loan$previous_bin <- binning(df_loan$previous, nbins = 2, type = "equal",
+                                labels = c("PR1", "PR2"))
+print("previous_bin ")
+df_loan$previous_bin
+```
+
+#### removing non binned variables:
+We have removed non binned variables as:
+```{r}
+df_loan <- subset(df_loan, select = -c(campaign,pdays,previous))
+names(df_loan)
+```
+
+
+#### value counts for categorical variables
+In this section, we have plotted boxplots for categorical variables to visualize all categories among the variables. Default, housing, loan and subscribed are binary variable and all other variables has more than two categories.
+
+```{r}
+df_loan %>%
+  keep(is.character) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+  facet_wrap(~ key, scales = "free") +
+  geom_boxplot()
+```
+
+1. Job: It has 12 categories and the value counts are shown below
+```{r}
+print("job ")
+table(df_loan$job ,useNA = "ifany")
+```
+
+2. Marital: It has three status which are given below wirh respective counts.
+```{r}
+print("marital ")
+table(df_loan$marital ,useNA = "ifany")
+```
+
+3. Education: This variable has 4 levels like primary, secondary, tertiary and unknown. the value counts are given below
+```{r}
+print("education ")
+table(df_loan$education ,useNA = "ifany")
+```
+
+4. Default: This is the binary variable with more negative response.
+```{r}
+print("default ")
+table(df_loan$default ,useNA = "ifany")
+```
+
+5. Housing: This is a binary variable with more positive response.
+```{r}
+print("housing ")
+table(df_loan$housing ,useNA = "ifany")
+```
+
+6. Loan: This is again binary variable and people prefer less loans.
+```{r}
+print("loan ")
+table(df_loan$loan ,useNA = "ifany")
+```
+
+7. Contact: The variable shown types of contact made based on cellular, telephone and unknown. Cellular contacts are maximum in number.
+```{r}
+print("contact ")
+table(df_loan$contact ,useNA = "ifany")
+```
+
+8. Months: The variable has all months and its value counts are given as:
+```{r}
+print("month ")
+table(df_loan$month ,useNA = "ifany")
+```
+
+9. poutcome: This variable has 4categories as shown below:
+```{r}
+print("poutcome ")
+table(df_loan$poutcome ,useNA = "ifany")
+```
+
+10. Subscribed: This is our target variable which is binary and value count shows that the subscription is less.
+```{r}
+print("subscribed ")
+table(df_loan$subscribed ,useNA = "ifany")
+```
+
+#### converting necessary variables to factors
+We have converted all important variable including our binned variables in factors.
+```{r}
+df_loan$job <- factor(df_loan$job)
+df_loan$marital <- factor(df_loan$marital)
+df_loan$education <- factor(df_loan$education)
+df_loan$default <- factor(df_loan$default)
+df_loan$housing <- factor(df_loan$housing)
+df_loan$loan <- factor(df_loan$loan)
+df_loan$contact <- factor(df_loan$contact)
+df_loan$month <- factor(df_loan$month)
+df_loan$campaign_bin <- factor(df_loan$campaign_bin)
+df_loan$pday_bin <- factor(df_loan$pday_bin)
+df_loan$previous_bin <- factor(df_loan$previous_bin)
+df_loan$poutcome <- factor(df_loan$poutcome)
+df_loan$subscribed <- factor(df_loan$subscribed)
+```
+
+#### methods to check correlation among numerical variables:
+Correlation table for all numerical variables is shown below:
+```{r}
+cor(df_loan[sapply(df_loan,is.numeric)])
+```
+From above table, it is concluded that pdays and previous has high correlation with correlation coefficient greater than 0.8.
+
+#### pchisquare:
+Chi-square test is done to check association of categorical variables:
+```{r}
+chisq.test(df_loan$job, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$marital, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$education, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$default, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$housing, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$loan, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$contact, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$month, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$poutcome, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$pday_bin, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$campaign_bin, df_loan$subscribed, correct=FALSE)
+chisq.test(df_loan$previous_bin, df_loan$subscribed, correct=FALSE)
+```
+P-value is less than 0.05 among all cases and X-squared value is large. Hence, we can reject null hypothesis and the variables have some association or dependency.
+
+#### baseline logistic model:
+A baseline model is being drawn by taking subscribed as target variable and summary is given as:
+```{r}
+modelv1 <- glm(subscribed ~ age + job + marital + education + default + balance 
+               + housing + loan + contact + day + month + duration + poutcome 
+               + campaign_bin + pday_bin + previous_bin, data = df_loan, family = "binomial" )
+summary(modelv1)
+```
+Null Deviance = 22893
+Residual Deviance = 15115
+AIC = 15217
+This is our base model and the model has some insignificant variables. Also, the AIC score is high. Hence, the model needs some further processing to find best fit output.
+
+#### checking for multicollinearity
+We have checked multicollinearity using VIF (Variance Inflation Factor) of model. When VIF factor is more than 10 for variables then the variables are collinear. In our case, pday_bin and poutcome has VIF more than 10. Therefore,these variables are collinear and we need to remove one of this. We decided to remove pday_bin. 
+The bar plot with reference level 10 is shown below:  
+
+```{r}
+vif_values <- data.frame(vif(modelv1))
+barplot(vif_values$GVIF,names.arg = rownames(vif_values),las = 1, main = "VIF Values", horiz = TRUE, col = "steelblue")
+#add vertical line at 5
+abline(v = 10, lwd = 3, lty = 2)
+```
+
+#### removing pday_bin and remodelling
+We have modeled the data again after removing pday_bin. The statistics are given as:
+Null Deviance: 22893
+Residual Deviance: 15133
+AIC: 15229
+Although the AIC is increase by 8 units in this model yet the model can perform better. As the increment is negligible, a variable is removed which may increase the variance or AIC but the model overall may perform better.
+
+```{r}
+modelv2 <- glm(subscribed ~ age + job + marital + education + default + balance 
+               + housing + loan + contact + day + month + duration + poutcome 
+               + campaign_bin + previous_bin, data = df_loan, family = "binomial" )
+summary(modelv2)
+```
+
+#### rechecking vif:
+We have reconfirmed VIF in this section and confirmed that no variable is multicollinear because VIF is less than 10 in all cases.
+```{r}
+vif_values <- data.frame(vif(modelv2))
+barplot(vif_values$GVIF,names.arg = rownames(vif_values),las = 1, main = "VIF Values", horiz = TRUE, col = "steelblue")
+#add vertical line at 5
+abline(v = 10, lwd = 3, lty = 2)
+```
+
+#### removing insignificant terms
+We have some insignificant variables in the model whose p-value is not significant according to null hypothesis. We have removed those variables. Age, default and education is insignficant as p-value is more than 0.05 and thus we have removed these variables in next model.
+
+```{r}
+modelv3 <- glm(subscribed ~ job + marital + balance 
+               + housing + loan + contact + day + month + duration + poutcome 
+               , data = df_loan, family = "binomial" )
+summary(modelv3)
+```
+Null Deviance: 22893
+Residual Deviance: 15247
+AIC: 15317
+Again AIC is increased although we have removed three variables. For better results, we have worked on interaction terms in next section.
+
+#### Interaction term detection
+Since multicollinearity has not improved the statistics much. Thus, in this section we have checked interaction by anova. The following method processed anova test on the model and the interaction is derived for all significant variables whose variance is high. 
+
+##### Types of interaction
+###### Quantitative interaction
+When the direction of one outcome is independent of other variable then we have quanitaitve interaction.
+###### Qualitative interaction
+When the direction of outcomes are opposite then we have qualitative interaction.
+
+```{r}
+# model_int <- glm(subscribed ~ (job + marital + balance
+#                + housing + loan + contact + day + month + duration + poutcome)^2
+#                , data = df_loan, family = "binomial" )
+# anova(model_int,test = "Chisq")
+```
+
+#### interaction term plot: day:month
+This variable has qualitative interaction as direction of months are opposite.
+Deviance = 385.3 for 11 degree of freedom
+The first interaction has been drawn by taking day and month as interacting variable versus our dependent variable, subscribed.
+We have found the days have significant interaction with months which affect the probability of subscription.
+
+```{r}
+model_day_month_int <- glm(subscribed ~ day*month, data = df_loan, family = "binomial" )
+plot_model(model_day_month_int, type = "int")
+```
+
+#### interaction term plot: month:poutcome
+In this case, the interaction is qualitative among failure, other success and unknown as these variables have opposite directions. 
+Deviance = 318.0 for 33 degree of freedom
+The second interaction has been derived by considering month with poutcome. It also has high deviance and interaction plot represents that subscription is interacted with these two variables.
+```{r}
+model_month_pout_int <- glm(subscribed ~ month*poutcome, data = df_loan, family = "binomial" )
+plot_model(model_month_pout_int, type = "int")+geom_line()
+```
+
+#### interaction term plot: job:month 
+The campaign has been conducted in different months so the subscription rate is different among each month. The direction of almost all months is opposite to one another. And these variables are interacting variables.
+Deviance = 287.4 with 121 degree of freedom
+
+```{r}
+model_month_job_int <- glm(subscribed ~ job*month , data = df_loan, family = "binomial" )
+plot_model(model_month_job_int, type = "int")+geom_line()
+```
+
+
+#### Splitting dataset into 80:20
+We has splited data in train and test dataset to perform elimination and validate the model.
+Our 80% observations goes in train dataset and 20% of observations are in test dataset.
+
+```{r}
+df_loan <- na.omit(df_loan)
+set.seed(13)
+sample <- sample.split(Y = df_loan$subscribed, SplitRatio = 0.8)
+train_df <- subset(df_loan, sample == TRUE)
+test_df <- subset(df_loan, sample == FALSE)
+```
+
+#### stepwise variable selections
+We have checked missing values in our target value initially to validate that there is no missing value in it.
+
+```{r}
+sum(is.na(df_loan$subscribed))
+```
+
+
+##### backward elimination without interaction
+Backward elimination is done by taking all the variables in model initially and then the model has removed insignificant variables. Here we have found three variable that are removed from the model based on high AIC value.
+
+```{r}
+model_interceptv1 <- glm(subscribed~1,family = 'binomial',data = train_df)
+model_allv1 <- glm(subscribed~.,family = 'binomial',data = train_df)
+backwardv1 <- stepAIC(model_allv1, direction='backward', scope=formula(model_allv1), trace=0)
+backwardv1$anova
+```
+
+```{r}
+backwardv1$coefficients
+```
+We have checked coefficients or estimates of the variables that are kept in model to see the probability of association of variables with target variables.
+
+##### forward selection without interaction
+We have taken null model to perform forward selection. The model has kept 14 variables and removed 2 variable with high AIC value.
+
+```{r}
+forwardv1 <- stepAIC(model_interceptv1, direction='forward', scope=formula(model_allv1), trace=0)
+forwardv1$anova
+```
+
+```{r}
+forwardv1$coefficients
+```
+We have again verified estimates of variables to check the probability of subscription depending upon all the variables.
+
+##### backward elimination with interaction:
+We have made backward elimination model with interaction term. This model has preserved one more variable than without interaction. Hence, the interaction term has verified that the variables can be significant because of interaction.
+```{r}
+model_interceptv2 <- glm(subscribed~1,family = 'binomial',data = train_df)
+model_allv2 <- glm(subscribed~age + job + marital + education + default + balance 
+               + housing + loan + contact + day + month + duration + poutcome 
+               + campaign_bin + previous_bin + day*month,family = 'binomial',data = train_df)
+backwardv2 <- stepAIC(model_allv2, direction='backward', scope=formula(model_allv2), trace=0)
+backwardv2$anova
+```
+
+```{r}
+backwardv2$coefficients
+```
+The estimated of probability of subscription is taken to make estimates.
+
+##### forward selection with interaction:
+Here 
+```{r}
+forwardv2 <- stepAIC(model_interceptv2, direction='forward', scope=formula(model_allv2), trace=0)
+forwardv2$anova
+```
+
+```{r}
+forwardv2$coefficients
+```
+
+#### comparing models:
+
+First of all we will compare our model based on AIC value as we choosed stepAIC method for variable selection. Lets understand what AIC really is. An estimate of prediction error and hence of the relative quality of statistical models for a certain set of data is the Akaike information criterion. AIC calculates the quality of each model in relation to the other models given a set of models for the data. As a result, AIC offers a model selection method.
+
+```{r}
+library(stats)
+print("forward without interaction")
+print(AIC(forwardv1))
+print("forward with interaction")
+print(AIC(forwardv2))
+```
+
+```{r}
+print("backward without interaction")
+print(AIC(backwardv1))
+print("backward with interaction")
+print(AIC(backwardv2))
+```
+
+Here we notice that our AIC value for backward and forward selection method without interaction term is the same. The same stands for AIC value of forward and backward elimination with interaction.
+
+Now lets compare the different model using loglikelihood test. Here the models we will consider for analysis is our forward selection model with and without interaction. We will also use backward elimination model with and without interaction.
+
+Lets state our hypothesis:
+H0: Reduced model is significant.
+HA: The full model is significant.
+
+```{r}
+library(lmtest)
+lrtest(forwardv1, forwardv2)
+```
+
+```{r}
+lrtest(backwardv1, backwardv2)
+```
+
+Here in both the cases our full model (model with interaction) is appropriate as p-value is less than 0.05.
+
+For this project, we will also consider forwardv1 and forwardv2 for reference in the below questions:
+
+#### classification report
+
+In this following question, we will calculate classification report and multiple classification metrics like accuracy, specificity, sensitivity etc.
+
+```{r}
+#### forwardv2
+
+test_df_sub_forv2 <- subset(test_df,select = c(subscribed,duration,poutcome,month,contact,housing
+                          ,campaign_bin,job,loan,marital,day,education,previous_bin,balance))
+
+glm_probs_forv2 = data.frame(probs <- predict(forwardv2,test_df_sub_forv2,type = "response"))
+
+library(dplyr)
+glm_pred_forv2 = glm_probs_forv2 %>%
+  mutate(pred = ifelse(probs>.5, "yes", "no"))
+
+glm_pred_forv2$pred <- factor(glm_pred_forv2$pred)
+
+print("classification report: ")
+caret::confusionMatrix(glm_pred_forv2$pred,test_df$subscribed)
+```
+
+Classification Report of model with interaction: Here the overall accuracy is 0.9039. This might be misleading because our dataset response variable is imbalance. Due to this our model is more biased on "No" class which has more datapoints. When observed, we have Sensitivity = 0.9748 whereas the Specificity = 0.3715 . This discrepancy between sensitivity and specificity is because of huge data counts between yes and no (subscribe variable). Our balanced accuracy considering the imbalance data is 0.6731. This model is better overall than other models.Here our positive reference class is "no".
+
+```{r}
+#### forwardv1
+
+test_df_sub_forv1 <- subset(test_df,select = c(job, marital, education, balance
+    , housing, loan, contact, day, month, duration, poutcome, campaign_bin,
+    pday_bin,previous_bin))
+
+glm_probs_forv1 = data.frame(probs <- predict(forwardv1,test_df_sub_forv1,type = "response"))
+
+glm_pred_forv1 = glm_probs_forv1 %>%
+  mutate(pred = ifelse(probs>.5, "yes", "no"))
+
+glm_pred_forv1$pred <- factor(glm_pred_forv1$pred)
+
+print("classification report: ")
+caret::confusionMatrix(glm_pred_forv1$pred,test_df$subscribed)
+```
+
+Classification Report of model without interaction: Here the overall accuracy is 0.9039. Again this might be misleading because our dataset response variable is imbalance. Due to the imbalance data, our model is more biased on "No" class which has more datapoints. When observed, we have Sensitivity = 0.9767 whereas the Specificity = 0.3392 (lower than prior model) . This discrepancy between sensitivity and specificity is because of huge data counts between yes and no (subscribe variable). Our balanced accuracy considering the imbalance data is 0.6579. Here the Positive reference class is "no".
+
+#### AUC the ROC curve:
+
+Now we will calculate Area Under Curve (AUC) for forward selection model with and without interaction.
+
+```{r}
+#### forwardv1
+library(pROC)
+probsv1 <- predict(forwardv1,test_df_sub_forv1,type = "response")
+test_rocv1 = roc(test_df$subscribed ~ probsv1, plot = FALSE, print.auc = FALSE)
+
+#### forwardv2
+probsv2 <- predict(forwardv2,test_df_sub_forv2,type = "response")
+test_rocv2 = roc(test_df$subscribed ~ probsv2, plot = FALSE, print.auc = FALSE)
+
+plot(test_rocv1, colorize = TRUE,print.auc = TRUE,col="red",print.auc.x = 0.9,
+     print.auc.y = 0.5)
+plot(test_rocv2, add = TRUE, col="blue",print.auc = TRUE,print.auc.x = 0.4)
+```
+
+The performance of a classification model through each classification threshold is depicted on a graph called a receiver operating characteristic curve (ROC).
+
+Here the forward selection model with interaction has an AUC score of 0.916 whereas the model without interaction has an AUC score of 0.907.
+
+#### Lack of fit test (Hosmer-Lemshow test- ungrouped data):
+
+```{r}
+library(glmtoolbox)
+
+hltest(forwardv1, verbose = TRUE)
+hltest(forwardv2, verbose = TRUE)
+```
+
+The Hosmer-Lemeshow test is a statistical test evaluating the logistic regression model's goodness of fit.
+
+Th hypothesis:
+
+H0: The model is a good fit for the data
+H1: The model is not a good fit.
+
+here based on 10 sample group size, both the model's observed value is not equal to expected value. Even the p value for both model's lack of fit test is less than 0.05 stating that we reject null hypothesis. Hence our model doesn't fit the data properly.
+
+#### Recommendation and conclusion:
+
+* From the intensive EDA, it is evident that our dataset is imbalance. The response variable "subscribe" have two levels : Yes and No. level "No" has 27932 datapoints whereas level "yes" has 3715 datapoints. Because of such discrepancy in data count between two levels, we saw our model was more biased towards the class "No" than "Yes". Our overall accuracy for the model with interaction was good but when considered altogether, the balanced accuracy and specificity were below average. 
+
+* Beacause we find such imbalance in our dataset, we could use resampling techniques to upsample or downsample the data counts of our levels making it balance. That will reduce the model being biased on higher count level.
+
+* Another important step to handle data imbalance in our modelling is to filter our low variance columns. We can calculate the variance explained by each column on target variable using Principal Component Analysis. PCA is an important algorithm that calculate the variance of each column. Based on the PCA value, we can remove low PCA columns and consider the higher and significant one for modelling.
+
+* Moreover, here in this project we used baseline simple logistic regression for our modelling. Given the fact that there are non-linear relationship of independent variable with target variable. Other complex model such as Random Forest and XGBoost could a better choice. They are designed to handle imbalance data and reduce bias overall.
+
+* Last but not the least, we can normalize the overall numerical variablein our dataset which would lead the model to have better training and accuracy.
+
+#### saving cleaned CSV
+
+```{r}
+write.csv(test_df_sub_forv1,'test_forwardv1.csv')
+write.csv(test_df_sub_forv2,'test_forwardv2.csv')
+```
+
+
+
